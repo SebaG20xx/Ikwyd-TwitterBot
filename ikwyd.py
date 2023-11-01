@@ -7,7 +7,7 @@ import tweepy
 # Twitter API credentials
 client = tweepy.Client(
     consumer_key="INSERT_HERE",
-    consumer_secret="kINSERT_HERE",
+    consumer_secret="INSERT_HERE",
     access_token="INSERT_HERE",
     access_token_secret="INSERT_HERE"
 )
@@ -30,122 +30,152 @@ def get_similar_ips(url):
         print(f"Error requesting {url}: {e}")
     return []
 
-# Define a function to create a tweet with retries
-def create_tweet_with_retry(client, tweet_text, retries=3):
-    for _ in range(retries):
+def cargar_tweets_previos(archivo):
+    try:
+        tweets_previos = set()
+        with open(archivo, 'r') as file:
+            lines = file.read().splitlines()
+            for line in lines:
+                parts = line.split(";")
+                if len(parts) == 2:
+                    ip, torrent_text = parts[0].strip(), parts[1].strip("'")
+                    tweets_previos.add((ip, torrent_text))
+        return tweets_previos
+    except FileNotFoundError:
+        return set()
+
+def guardar_tweet_nuevo(archivo, ip, torrent_text):
+    ip = ip.strip()  
+    torrent_text = torrent_text.strip()  
+    tweet_text = f"{ip};'{torrent_text}'"
+    with open(archivo, 'a') as file:
+        file.write(tweet_text + '\n')
+
+
+def create_tweet_with_retry(client, ip, torrent_text, tweet_file, tweets_previos, max_retries=3):
+    tweet_text = f"La IP {ip} ha descargado el siguiente torrent: '{torrent_text}'"
+    
+    formatted_entry = (ip.strip(), torrent_text.strip())  
+    if formatted_entry in tweets_previos:
+        print("El tweet ya existe. Omitiendo.")
+        return
+
+    for attempt in range(1, max_retries + 1):
         try:
             client.create_tweet(text=tweet_text)
+            print("Tweet creado exitosamente:", tweet_text)
+            guardar_tweet_nuevo(tweet_file, ip, torrent_text)
+            tweets_previos.add(formatted_entry) 
             return
-        except tweepy.errors.TooManyRequests as e:
-            print("Rate limit exceeded. Waiting for 15 minutes...")
-            time.sleep(900)  # Wait for 15 minutes (900 seconds)
-        except tweepy.TweepError as e:
-            print(f"Error creating tweet: {e}")
-            break
-    print("Failed to create tweet after retries.")
+        except tweepy.TweepyException as e:
+            if isinstance(e, tweepy.errors.Forbidden):
+                print(f"Error de tweet duplicado: {e}. Guardando el tweet.")
+                guardar_tweet_nuevo(tweet_file, ip, torrent_text) 
+                break 
+            elif isinstance(e, tweepy.errors.TooManyRequests):
+                print(f"Rate limit. Esperando por 15 minutos (attempt {attempt}/{max_retries})...")
+                time.sleep(900)  
+            else:
+                print(f"Error al crear el tweet (attempt {attempt}/{max_retries}): {e}")
+                if attempt >= max_retries:
+                    print("Creación de tweet exitosa después de los reintentos.")
 
-def process_ip(ip, url):
+def process_ip(ip, url, tweet_file, tweets_previos):
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.0.0 Safari/537.36'
     }
-    URLIP = url  # Use the correct URL format
 
     try:
-        req = requests.get(url=URLIP, headers=headers)
+        req = requests.get(url=url, headers=headers)
         req.raise_for_status()
         soup = BeautifulSoup(req.content, 'html5lib')
         out = soup.find_all("div", class_="torrent_files")
 
         if out:
-            print("IP Encontrada: " + ip)
-            # Process the torrent files here
+            print("IP Encontrada:", ip)
             for torrent_file in out:
-                # Extract and process the torrent file data
                 torrent_info = torrent_file.text
-                tweet = f"La IP {ip} ha descargado el siguiente torrent: '{torrent_info}'\nLink: {URLIP}"
-                print("Torrent File:", torrent_info)
-                print("Tweet:", tweet)
+                print("Torrent File:", torrent_info.strip())
+                create_tweet_with_retry(client, ip, torrent_info.strip(), tweet_file, tweets_previos)
 
-                # Post the tweet with retries
-                create_tweet_with_retry(client, tweet)
         else:
-            print(URLIP)
-            print("IP no Encontrada: " + ip)
+            print("IP no Encontrada:", ip)
+
+        similar_ips = get_similar_ips(url)
+        for similar_ip_link in similar_ips:
+            match = re.search(r'ip=(\d+\.\d+\.\d+\.\d+)', similar_ip_link)
+            if match:
+                similar_ip = match.group(1)
+                print(f"Buscando IP similar: {similar_ip}")
+                process_ip(similar_ip, similar_ip, tweet_file, tweets_previos)
 
     except requests.exceptions.RequestException as e:
-        print(f"Error requesting {URLIP}: {e}")
+        print(f"Error al solicitar: {e}")
 
 processed_ips = set()
 
 def main():
+    tweet_file = 'tweets_previos.txt'
+    tweets_previos = cargar_tweets_previos(tweet_file)
+    listaips = open('ips.txt')
+    URL_BASE = "https://iknowwhatyoudownload.com/en/peer/?ip="
+
     while True:
-        cont = 0
-        listaips = open('ips.txt')
-        registro = open('ipsdetectadas.txt', 'w')
-        URL_BASE = "https://iknowwhatyoudownload.com/en/peer/?ip="
-        cantidad_lineas = contarlineas("ips.txt")
+        try:
+            ip = next(listaips).strip()  # Lee la próxima IP
+        except StopIteration:
+            break
 
-        for ip in listaips:
-            ip = ip.strip()
-            
-            # Check if the IP has already been processed
-            if ip in processed_ips:
-                continue
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.0.0 Safari/537.36'
-            }
-            URLIP = URL_BASE + ip
+        if ip in processed_ips:
+            continue
 
-            try:
-                req = requests.get(url=URLIP, headers=headers)
-                req.raise_for_status()
-                soup = BeautifulSoup(req.content, 'html5lib')
-                out = soup.find_all("div", class_="torrent_files")
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/101.0.0.0 Safari/537.36'
+        }
+        URLIP = URL_BASE + ip
 
-                if out:
-                    print("IP Encontrada: " + ip)
-                    # Process the first torrent file here
-                    torrent_file = out[0]  # Get the first torrent
-                    torrent_info = torrent_file.text
-                    print("Torrent File:", torrent_info)
+        try:
+            req = requests.get(url=URLIP, headers=headers)
+            req.raise_for_status()
+            soup = BeautifulSoup(req.content, 'html5lib')
+            out = soup.find_all("div", class_="torrent_files")
 
-                    # Pass the URL to process_ip
-                    process_ip(ip, URLIP)
-                    
-                    # Add the IP to the set of processed IPs
-                    processed_ips.add(ip)
-                    
-                    # Continue to the next IP
-                    continue
+            if out:
+                print("IP Encontrada: " + ip)
+                # Procesar el primer archivo torrent aquí
+                torrent_file = out[0]  # Obtener el primer torrent
+                torrent_info = torrent_file.text
+                print("Torrent File:", torrent_info)
 
-                else:
-                    print("IP no Encontrada: " + ip)
+                # Pasar la URL a process_ip
+                process_ip(ip, URLIP, tweet_file, tweets_previos)
 
-                cont += 1
-                restantes = cantidad_lineas - cont
-                print("Quedan " + str(restantes) + " ips restantes")
+                # Agregar la IP al conjunto de IPs procesadas
+                processed_ips.add(ip)
+            else:
+                print("IP no Encontrada: " + ip)
 
-                similar_ips = get_similar_ips(URLIP)
-                for similar_ip_link in similar_ips:
-                    match = re.search(r'ip=(\d+\.\d+\.\d+\.\d+)', similar_ip_link)
-                    if match:
-                        similar_ip = match.group(1)
-                        print(f"Looking at similar IP: {similar_ip}")
+            # Buscar IPs similares aquí
+            similar_ips = get_similar_ips(URLIP)
+            for similar_ip_link in similar_ips:
+                match = re.search(r'ip=(\d+\.\d+\.\d+\.\d+)', similar_ip_link)
+                if match:
+                    similar_ip = match.group(1)
+                    print(f"Explorando IP similar: {similar_ip}")
 
-                        # Update the URLIP for similar IPs
-                        URLIP = URL_BASE + similar_ip
+                    # Actualizar la URLIP para la IP similar
+                    URLIP = URL_BASE + similar_ip
 
-                        # Pass the updated URLIP to process_ip
-                        process_ip(similar_ip, URLIP)
+                    # Llamar a process_ip para la IP similar
+                    process_ip(similar_ip, URLIP, tweet_file, tweets_previos)
 
-            except requests.exceptions.RequestException as e:
-                print(f"Error requesting {URLIP}: {e}")
+        except requests.exceptions.RequestException as e:
+            print(f"Error al solicitar {URLIP}: {e}")
 
-        listaips.close()
-        registro.close()
-        print("Sleeping for 10 minutes")  
-        time.sleep(600)  
+    listaips.close()
+
+    print("Esperando por una hora")
+    time.sleep(3600)
 
 if __name__ == "__main__":
     main()
