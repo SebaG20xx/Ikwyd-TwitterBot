@@ -1,4 +1,4 @@
-# IKnowwhatyoudownload.com TwitterBot (XBot)
+# IKnowwhatyoudownload.com TwitterBot (X - Bot)
 
 Este es un proyecto de seguimiento de IPs que han descargado torrents utilizando el sitio web [iknowwhatyoudownload.com](https://iknowwhatyoudownload.com/). El proyecto utiliza Python y las bibliotecas Requests, BeautifulSoup y Tweepy para realizar un seguimiento de las IPs y publicar tweets sobre las descargas de torrents.
 
