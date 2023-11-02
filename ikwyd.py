@@ -52,8 +52,8 @@ def guardar_tweet_nuevo(archivo, ip, torrent_text):
         file.write(tweet_text + '\n')
 
 
-def create_tweet_with_retry(client, ip, torrent_text, tweet_file, tweets_previos, max_retries=3):
-    tweet_text = f"La IP {ip} ha descargado el siguiente torrent: '{torrent_text}'"
+def create_tweet_with_retry(client, ip, torrent_text, tweet_file, url, tweets_previos, max_retries=3):
+    tweet_text = f"La IP {ip} ha descargado el siguiente torrent: '{torrent_text}'\nLink: {url}"
     
     formatted_entry = (ip.strip(), torrent_text.strip())  
     if formatted_entry in tweets_previos:
@@ -96,7 +96,7 @@ def process_ip(ip, url, tweet_file, tweets_previos):
             for torrent_file in out:
                 torrent_info = torrent_file.text
                 print("Torrent File:", torrent_info.strip())
-                create_tweet_with_retry(client, ip, torrent_info.strip(), tweet_file, tweets_previos)
+                create_tweet_with_retry(client, ip, torrent_info.strip(), url, tweet_file, tweets_previos)
 
         else:
             print("IP no Encontrada:", ip)
@@ -172,10 +172,8 @@ def main():
         except requests.exceptions.RequestException as e:
             print(f"Error al solicitar {URLIP}: {e}")
 
-    listaips.close()
-
-    print("Esperando por una hora")
-    time.sleep(3600)
+        print("Esperando por una hora")
+        time.sleep(3600)
 
 if __name__ == "__main__":
     main()
