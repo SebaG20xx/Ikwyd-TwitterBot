@@ -12,9 +12,6 @@ client = tweepy.Client(
     access_token_secret="INSERT_HERE"
 )
 
-def contarlineas(archivo):
-    with open(archivo, "r") as file:
-        return sum(1 for _ in file)
 
 def get_similar_ips(url):
     headers = {
