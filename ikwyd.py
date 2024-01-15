@@ -34,25 +34,25 @@ def cargar_tweets_previos(archivo):
             lines = file.read().splitlines()
             for line in lines:
                 parts = line.split(";")
-                if len(parts) == 2:
-                    ip, torrent_text = parts[0].strip(), parts[1].strip("'")
-                    tweets_previos.add((ip, torrent_text))
+                if len(parts) == 3:
+                    ip, fecha, torrent_text = parts[0].strip(), parts[1].strip("'"), parts[2].strip("'")
+                    tweets_previos.add((ip, fecha, torrent_text))
         return tweets_previos
     except FileNotFoundError:
         return set()
 
-def guardar_tweet_nuevo(archivo, ip, torrent_text):
+def guardar_tweet_nuevo(archivo, ip, fecha, torrent_text):
     ip = ip.strip()  
     torrent_text = torrent_text.strip()  
-    tweet_text = f"{ip};'{torrent_text}'"
+    tweet_text = f"{ip};'{torrent_text}';'{fecha}"
     with open(archivo, 'a') as file:
         file.write(tweet_text + '\n')
 
 
-def create_tweet_with_retry(client, ip, torrent_text, url, tweet_file, tweets_previos, max_retries=3):
+def create_tweet_with_retry(client, ip, fecha, torrent_text, url, tweet_file, tweets_previos, max_retries=3):
     tweet_text = f"La IP {ip} ha descargado el siguiente torrent: '{torrent_text.strip()}'\nLink: {url}"
     print(tweet_text)
-    formatted_entry = (ip.strip(), torrent_text.strip())  
+    formatted_entry = (ip.strip(), fecha, torrent_text.strip() )   
     if formatted_entry in tweets_previos:
         print("El tuit ya existe, omitiendo...")
         return
@@ -89,13 +89,15 @@ def process_ip(ip, url, tweet_file, tweets_previos):
         req.raise_for_status()
         soup = BeautifulSoup(req.content, 'html5lib')
         out = soup.find_all("div", class_="torrent_files")
+        date = soup.find('td', class_='date-column')
 
         if out:
             print("IP Encontrada:", ip)
             for torrent_file in out:
                 torrent_info = torrent_file.text
+                fecha = date.text
                 print("Torrent File:", torrent_info.strip())
-                create_tweet_with_retry(client, ip, torrent_info.strip(), url, tweet_file, tweets_previos)
+                create_tweet_with_retry(client, ip, fecha, torrent_info.strip(), url, tweet_file, tweets_previos)
 
         else:
             print("IP no Encontrada:", ip)
